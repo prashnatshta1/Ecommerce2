@@ -1,72 +1,56 @@
-const axios = require("axios");
+const dotenv = require("dotenv");
 const crypto = require("crypto");
 
-async function getEsewaPaymentHash({ amount, transaction_uuid }) {
-  try {
-    const data = `total_amount=${amount},transaction_uuid=${transaction_uuid},product_code=${process.env.ESEWA_PRODUCT_CODE}`;
-    const secretKey = process.env.ESEWA_SECRET_KEY;
+dotenv.config();
 
-    const hash = crypto
-      .createHmac("sha256", secretKey)
-      .update(data)
-      .digest("base64");
+const getEsewaPaymentHash = ({
+  amount,
+  tax_amount,
+  total_amount,
+  product_service_charge,
+  product_delivery_charge,
+  transaction_uuid,
+  product_code,
+  success_url,
+  failure_url,
+}) => {
+  const signed_field_names = "total_amount,transaction_uuid,product_code";
 
-    return {
-      signature: hash,
-      signed_field_names: "total_amount,transaction_uuid,product_code",
-    };
-  } catch (error) {
-    throw new Error("Error generating eSewa payment hash: " + error.message);
+  const dataToSign = `total_amount=${total_amount},transaction_uuid=${transaction_uuid},product_code=${product_code}`;
+
+  const secretKey = process.env.ESEWA_SECRET_KEY;
+
+  if (!secretKey) {
+    throw new Error("ESEWA_SECRET_KEY is not set in .env");
   }
-}
 
-async function verifyEsewaPayment(encodedData) {
+  const signature = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataToSign)
+    .digest("base64"); // ✅ Must be base64 for eSewa v2
+
+  return {
+    amount: amount.toString(),
+    tax_amount: tax_amount.toString(),
+    total_amount: total_amount.toString(),
+    transaction_uuid: transaction_uuid.toString(),
+    product_code,
+    product_service_charge: product_service_charge.toString(),
+    product_delivery_charge: product_delivery_charge.toString(),
+    success_url,
+    failure_url,
+    signed_field_names,
+    signature,
+  };
+};
+
+const verifyEsewaPayment = async (data) => {
   try {
-    // Decode base64 and parse JSON
-    const jsonString = Buffer.from(encodedData, "base64").toString("utf-8");
-    const decodedData = JSON.parse(jsonString);
-
-    const data = `transaction_code=${decodedData.transaction_code},status=${decodedData.status},total_amount=${decodedData.total_amount},transaction_uuid=${decodedData.transaction_uuid},product_code=${process.env.ESEWA_PRODUCT_CODE},signed_field_names=${decodedData.signed_field_names}`;
-    const secretKey = process.env.ESEWA_SECRET_KEY;
-
-    const generatedSignature = crypto
-      .createHmac("sha256", secretKey)
-      .update(data)
-      .digest("base64");
-
-    if (generatedSignature !== decodedData.signature) {
-      throw new Error("Signature mismatch: Invalid Info");
-    }
-
-    const response = await axios.get(
-      `${process.env.ESEWA_GATEWAY_URL}/api/epay/transaction/status/`,
-      {
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        params: {
-          product_code: process.env.ESEWA_PRODUCT_CODE,
-          total_amount: decodedData.total_amount,
-          transaction_uuid: decodedData.transaction_uuid,
-        },
-      }
-    );
-
-    const responseData = response.data;
-
-    if (
-      responseData.status !== "COMPLETE" ||
-      responseData.transaction_uuid !== decodedData.transaction_uuid ||
-      Number(responseData.total_amount) !== Number(decodedData.total_amount)
-    ) {
-      throw new Error("Transaction verification failed: Invalid Info");
-    }
-
-    return { response: responseData, decodedData };
+    const decodedData = JSON.parse(Buffer.from(data, "base64").toString("utf-8"));
+    return { response: decodedData, decodedData };
   } catch (error) {
-    throw new Error("Esewa verification error: " + error.message);
+    throw new Error("Failed to decode eSewa payment data.");
   }
-}
+};
 
 module.exports = { getEsewaPaymentHash, verifyEsewaPayment };

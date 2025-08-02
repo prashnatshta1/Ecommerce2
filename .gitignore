@@ -1,0 +1,14 @@
+# Ignore root .env
+.env
+
+# Ignore backend files
+/backend/node_modules/
+/backend/.env
+
+# Ignore Next.js app build and node_modules
+/my-next-app/node_modules/
+/my-next-app/.next
+/my-next-app/.env
+
+# Optional: Ignore logs and lock files
+*.log
